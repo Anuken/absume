@@ -1,0 +1,3 @@
+[submodule "fau"]
+	path = fau
+	url = https://github.com/Anuken/fau.git

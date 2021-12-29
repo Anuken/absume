@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: true
+      - uses: jiro4989/setup-nim-action@v1
+        with:
+          nim-version: 'stable'
+      - name: Install packages needed for GLFW
+        run: |
+          sudo apt install -y xorg-dev libgl1-mesa-dev
+      - name: Build nyj
+        run: |
+          nimble build -Y
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v7
+      - name: Verify Emscripten is installed
+        run: emcc -v
+      - name: Build web version
+        run: |
+          git config --global user.email "cli@github.com"
+          git config --global user.name "Github Actions"
+          git clone --recursive https://github.com/Anuken/nyj.git
+          cd nyj
+          nimble web
+          git checkout gh-pages
+          git pull
+          rm -rf index*
+          cp build/web/* .
+          rm -rf build/ assets/ fau/
+          git add .
+          git commit --allow-empty -m "Updating pages"
+          git push https://Anuken:${{ secrets.API_TOKEN_GITHUB }}@github.com/Anuken/nyj
+          
