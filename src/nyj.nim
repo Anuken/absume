@@ -38,7 +38,7 @@ sys("draw", [Main]):
     if keyEscape.tapped: quitApp()
 
     sys.buffer.clear()
-    sys.buffer.resize((fau.size / scl).vec2i)
+    sys.buffer.resize(fau.sizei div scl.int)
     
     fau.cam.update(fau.size / scl)
     fau.cam.use()
