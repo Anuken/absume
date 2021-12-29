@@ -19,6 +19,7 @@ registerComponents(defaultComponentOptions):
     Vel = object
       x, y, rot: float32
       bub: float32
+      moveTime: float32
     
     Player = object
 
@@ -36,6 +37,7 @@ sys("move", [Player, Vel, Pos]):
     item.pos.y += base.y
 
     if vec.len > 0:
+      item.vel.moveTime += fau.delta
       incTimer(item.vel.bub, 7f / 60f):
         effectBubble(item.pos.vec2 + randVec(7f))
 
@@ -67,7 +69,7 @@ sys("draw", [Main]):
 
 sys("drawPlayer", [Player, Pos, Vel]):
   all:
-    draw("player".patch, item.pos.vec2, rotation = item.vel.rot - 90f.rad)
+    draw("player".patch, item.pos.vec2, rotation = item.vel.rot - 90f.rad, scl = vec2(1f, 1f + sin(item.vel.moveTime, 0.1f, 0.13f)))
 
 makeEffectsSystem()
 
