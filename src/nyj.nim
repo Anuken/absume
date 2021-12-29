@@ -69,25 +69,37 @@ sys("draw", [Main]):
   finish:
     discard
 
-sys("fish", [Main]):
-  start:
-    let p = "fish".patch
-    const amount = 50
-    
+template randRect(amount: int, seed: int, mutator, code: untyped) =
+  block:
     let view = fau.cam.viewport.grow(fau.cam.size.x)
     let r = 1000f
 
-    var ra = initRand(1)
+    var ra {.inject.} = initRand(seed)
 
     for i in 0..<amount:
-      let scl = ra.rand(1f..4f) * 3f
-
-      var pos = vec2(ra.rand(-r..r), ra.rand(-r..r)) + vec2(fau.time * scl, sin(fau.time, ra.rand(0.7f..1.5f), ra.rand(0f..4f)))
+      var pos {.inject.} = vec2(ra.rand(-r..r), ra.rand(-r..r)) + vec2(fau.time * scl, sin(fau.time, ra.rand(0.7f..1.5f), ra.rand(0f..4f)))
+      pos += mutator
       pos -= view.pos
       pos = vec2(pos.x.emod view.w, pos.y.emod view.h)
       pos += view.pos
 
-      draw(p, pos, scl = vec2(-1f + sin(fau.time, ra.rand(0.1f..0.3f), 0.06f), 1f))
+      code
+
+sys("particles", [Main]):
+  start:
+    let 
+      fish = "fish".patch
+      bubble = "bubble".patch
+
+    randRect(40, 0):
+      vec2(sin(fau.time, ra.rand(0.7f..1.5f), ra.rand(0f..4f)), fau.time * ra.rand(0.9f..4f) * 4f)
+    do:
+      draw(bubble, pos, scl = vec2(ra.rand(0.6f..1.2f)), color = col2)
+
+    randRect(50, 0):
+      vec2(fau.time * ra.rand(1f..4f) * 3f, sin(fau.time, ra.rand(0.7f..1.5f), ra.rand(0f..4f)))
+    do:
+      draw(fish, pos, scl = vec2(-1f + sin(fau.time, ra.rand(0.1f..0.3f), 0.06f), 1f), color = col2)
 
 
 sys("drawPlayer", [Player, Pos, Vel]):
