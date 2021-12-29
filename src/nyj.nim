@@ -9,8 +9,8 @@ const
   col3 = %"a7c6c5"
 
 const 
-  scl = 4f
   playerSpeed = 60f
+  targetHeight = 300
 
 var player: EntityRef
 
@@ -58,8 +58,10 @@ sys("draw", [Main]):
   start:
     if keyEscape.tapped: quitApp()
 
+    let scl = fau.size.y / targetHeight.float32
+
     sys.buffer.clear(col1)
-    sys.buffer.resize(fau.sizei div scl.int)
+    sys.buffer.resize((fau.size / scl).vec2i)
     
     fau.cam.update(fau.size / scl, player.fetch(Pos).vec2)
     fau.cam.use()
@@ -77,7 +79,7 @@ template randRect(amount: int, seed: int, mutator, code: untyped) =
     var ra {.inject.} = initRand(seed)
 
     for i in 0..<amount:
-      var pos {.inject.} = vec2(ra.rand(-r..r), ra.rand(-r..r)) + vec2(fau.time * scl, sin(fau.time, ra.rand(0.7f..1.5f), ra.rand(0f..4f)))
+      var pos {.inject.} = vec2(ra.rand(-r..r), ra.rand(-r..r)) + vec2(fau.time * 4f, sin(fau.time, ra.rand(0.7f..1.5f), ra.rand(0f..4f)))
       pos += mutator
       pos -= view.pos
       pos = vec2(pos.x.emod view.w, pos.y.emod view.h)
