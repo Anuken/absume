@@ -4,13 +4,14 @@ static: echo staticExec("faupack -p:../assets-raw/sprites -o:../assets/atlas")
 
 #palette
 const
-  col1 = %"2c2352"
+  col1 = %"110f25"
   col2 = %"4f6b7a"
   col3 = %"a7c6c5"
 
 const 
-  playerSpeed = 60f
-  targetHeight = 300
+  playerSpeed = 80f
+  targetHeight = 300 #TODO unused
+  targetWidth = 600
 
 var player: EntityRef
 
@@ -23,7 +24,8 @@ defineEffects:
 registerComponents(defaultComponentOptions):
   type
     Vel = object
-      x, y, rot: float32
+      vec: Vec2
+      rot: float32
       bub: float32
       moveTime: float32
     
@@ -37,10 +39,13 @@ sys("move", [Player, Vel, Pos]):
     if vec.len > 0:
       item.vel.rot = aapproach(item.vel.rot, vec.angle, 6f * fau.delta)
     
-    let base = vec.angled(item.vel.rot)
+    item.vel.vec *= (1f - fau.delta * 4f)
 
-    item.pos.x += base.x
-    item.pos.y += base.y
+    let base = vec.angled(item.vel.rot)
+    if vec.len > 0: item.vel.vec = vec
+
+    item.pos.x += item.vel.vec.x
+    item.pos.y += item.vel.vec.y
 
     if vec.len > 0:
       item.vel.moveTime += fau.delta
@@ -58,7 +63,7 @@ sys("draw", [Main]):
   start:
     if keyEscape.tapped: quitApp()
 
-    let scl = fau.size.y / targetHeight.float32
+    let scl = fau.size.x / targetWidth.float32#fau.size.y / targetHeight.float32
 
     sys.buffer.clear(col1)
     sys.buffer.resize((fau.size / scl).vec2i)
@@ -91,17 +96,23 @@ sys("particles", [Main]):
   start:
     let 
       fish = "fish".patch
+      fish2 = "xenofish".patch
       bubble = "bubble".patch
 
-    randRect(40, 0):
+    randRect(45, 1):
       vec2(sin(fau.time, ra.rand(0.7f..1.5f), ra.rand(0f..4f)), fau.time * ra.rand(0.9f..4f) * 4f)
     do:
       draw(bubble, pos, scl = vec2(ra.rand(0.6f..1.2f)), color = col2)
 
-    randRect(50, 0):
+    randRect(30, 2):
+      vec2(fau.time * ra.rand(1f..4f) * 1f, sin(fau.time, ra.rand(0.7f..1.5f), ra.rand(0f..4f)))
+    do:
+      draw(fish, pos, scl = vec2(-1f + sin(fau.time, ra.rand(0.1f..0.3f), 0.06f), 1f) / 2f, color = col2)
+
+    randRect(45, 3):
       vec2(fau.time * ra.rand(1f..4f) * 3f, sin(fau.time, ra.rand(0.7f..1.5f), ra.rand(0f..4f)))
     do:
-      draw(fish, pos, scl = vec2(-1f + sin(fau.time, ra.rand(0.1f..0.3f), 0.06f), 1f), color = col2)
+      draw(if ra.rand(1f) > 0.8: fish2 else: fish, pos, scl = vec2(-1f + sin(fau.time, ra.rand(0.1f..0.3f), 0.06f), 1f), mixcolor = col2)
 
 
 sys("drawPlayer", [Player, Pos, Vel]):
