@@ -106,7 +106,7 @@ sys("particles", [Main]):
 
 sys("drawPlayer", [Player, Pos, Vel]):
   all:
-    draw("player".patch, item.pos.vec2, rotation = item.vel.rot - 90f.rad, scl = vec2(1f, 1f + sin(item.vel.moveTime, 0.1f, 0.13f)), color = col3)
+    draw("player".patch, item.pos.vec2, rotation = item.vel.rot, scl = vec2(1f + sin(item.vel.moveTime, 0.1f, 0.13f), -(item.vel.rot >= 90f.rad and item.vel.rot < 270f.rad).sign), mixColor = col3)
 
 makeEffectsSystem()
 
