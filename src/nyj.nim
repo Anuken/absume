@@ -1,6 +1,6 @@
 import ecs, fau/presets/[basic, effects], fau/util/util, math, random, strformat
 
-static: echo staticExec("faupack -p:../assets-raw/sprites -o:../assets/atlas")
+static: echo staticExec("faupack -p:../assets-raw/sprites -o:../assets/atlas --min:1024 --max:2048")
 
 #palette
 const
@@ -31,6 +31,10 @@ template fishTarget(): int = 5 + player.fetch(Player).form * 2
 template spawnFish(ftier: int, pos: Vec2) =
   let p = pos
   discard newEntityWith(Vel(rot: rand(6f)), Pos(x : p.x, y: p.y), Fish(dashCooldown: rand(2f..22f), tier: ftier, variant: rand(1..3), size: 2f, speedMult: rand(-0.2f..0.1f), sizeMult: rand(-0.25f..0.2f)))
+
+template spawnMonster(ftier: int, pos: Vec2) =
+  let p = pos
+  discard newEntityWith(Vel(), Pos(x: p.x, y: p.y), Monster(tier: ftier))
 
 proc shake(intensity: float32) = shakeTime = max(shakeTime, intensity)
 
@@ -88,10 +92,15 @@ registerComponents(defaultComponentOptions):
       speedMult: float32
       sizeMult: float32
       segments: array[3, float32]
+    
+    Monster = object
+      tier: int
 
 sys("init", [Main]):
   init:
     player = newEntityWith(Vel(), Pos(), Player())
+
+    spawnMonster(0, vec2(40f))
 
     const spread = 800f
     for i in 0..24:
@@ -111,7 +120,7 @@ sys("fish", [Fish, Vel, Pos]):
     for i in sys.counts.mitems:
       i = 0
   all:
-    const speedPerTier = 0.2f
+    const speedPerTier = 0.21f
 
     #despawn when not in range anymore
     let dst = item.pos.vec2.dst(pp)
@@ -150,7 +159,7 @@ sys("fish", [Fish, Vel, Pos]):
     item.pos.x += item.vel.vec.x
     item.pos.y += item.vel.vec.y
 
-    item.fish.dashCooldown -= fau.delta * (1f + item.fish.tier * 0.1f)
+    item.fish.dashCooldown -= fau.delta * (1f + item.fish.tier * 0.25f)
 
     #TODO
     if item.fish.tier >= 1 and item.vel.dashTime <= -2 and item.fish.dashCooldown <= 0f and item.fish.scare >= 0.6f:
@@ -319,6 +328,14 @@ sys("particles", [Main]):
       vec2(fau.time * ra.rand(1f..4f) * 3f, sin(fau.time, ra.rand(0.7f..1.5f), ra.rand(0f..4f)))
     do:
       draw(if ra.rand(1f) > 0.8: fish2 else: fish, pos, scl = vec2(-1f + sin(fau.time, ra.rand(0.1f..0.3f), 0.06f) * 0.6f, 1f) * 0.6f, mixcolor = col2)
+
+sys("drawMonsters", [Pos, Monster, Vel]):
+  all:
+    var divs: array[10, float32]
+    var rot = fau.time.sin(1.2f, 0.04f)
+    for i in divs.mitems:
+      i = rot
+    drawBend(patch(&"monster{item.monster.tier + 1}"), item.pos.vec2, divs, divs.len div 2, rotation = item.vel.rot, mixColor = col2)
 
 sys("drawFish", [Fish, Pos, Vel]):
   all:
