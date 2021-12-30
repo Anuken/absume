@@ -12,7 +12,8 @@ const
   speeds = [1f, 1.13f, 1.13f, 1.2]
   dashSpeeds = [1f, 1.3f, 1.3f, 1.5f]
   darknessLevels = [0f, 0.1f, 1f, 1f]
-  lightRadii = [0f, 40f, 100f, 110f]
+  lightRadii = [0f, 40f, 100f, 90f]
+  monsterOffsets = [-180f.rad, -90f.rad, -90f.rad, -180f.rad]
 
 const 
   playerSpeed = 7f
@@ -20,6 +21,7 @@ const
   targetWidth = 600
   fishSpawned = 40
   despawnRange = targetWidth * 3
+  monsterDespawnRange = targetWidth * 5f
   sclPerForm = 0.09f
   lightLayer = 10f
   origins = [vec2(18f, 9f), vec2(24.5f, 9.5f), vec2(30f, 9f)]
@@ -41,7 +43,9 @@ template spawnFish(ftier: int, pos: Vec2) =
 
 template spawnMonster(ftier: int, pos: Vec2) =
   let p = pos
-  discard newEntityWith(Vel(), Pos(x: p.x, y: p.y), Monster(tier: ftier))
+  discard newEntityWith(Vel(rot: rand(0f..10f)), Pos(x: p.x, y: p.y), Monster(tier: ftier, radius: patch("monster" & $ftier).width / 2f))
+
+template gameOver() = discard
 
 proc shake(intensity: float32) = shakeTime = max(shakeTime, intensity)
 
@@ -104,9 +108,9 @@ registerComponents(defaultComponentOptions):
       speedMult: float32
       sizeMult: float32
       segments: array[3, float32]
-    
     Monster = object
       tier: int
+      radius: float32
 
 sys("init", [Main]):
   init:
@@ -122,7 +126,7 @@ makeTimedSystem()
 
 sys("fish", [Fish, Vel, Pos]):
   fields:
-    counts: array[5, int]
+    counts: array[6, int]
 
   start:
     #TODO spawn fish
@@ -202,7 +206,38 @@ sys("fish", [Fish, Vel, Pos]):
 
       sys.deleteList.add item.entity
 
-sys("spawn", [Main]):
+
+sys("monsterSpawn", [Monster, Vel, Pos]):
+  start:
+    var count = 0
+  all:
+    count.inc
+  finish:
+    if count == 0:
+        let vec = vec2l(rand(360f.rad), targetWidth.float32 * rand(4f..5f)) + fau.cam.pos
+        spawnMonster(curForm, vec)
+
+sys("monsterMove", [Monster, Vel, Pos]):
+  start:
+    let p = player.fetch(Player)
+    let pp = player.fetch(Pos).vec2
+  all:
+    let vec = pp - item.pos.vec2
+    let speed = 13f + item.monster.tier.float32*4f
+
+    if not within(pp, item.pos.vec2, monsterDespawnRange + item.monster.radius):
+      sys.deleteList.add item.entity
+    
+    let delta = vec.lim(1f) * speed * fau.delta
+
+    #TODO VEL?
+    item.pos.x += delta.x
+    item.pos.y += delta.y
+
+    item.vel.rot = aapproach(item.vel.rot, (delta.angle - monsterOffsets[item.monster.tier]).mod(360f.rad), 0.01f * fau.delta)
+    
+
+sys("spawnFish", [Main]):
   fields:
     timer: float32
   start:
@@ -388,10 +423,10 @@ sys("particles", [Main]):
 
 sys("drawMonsters", [Pos, Monster, Vel]):
   all:
-    var divs: array[10, float32]
+    var divs: array[12, float32]
     var rot = fau.time.sin(1.2f, 0.04f)
-    for i in divs.mitems:
-      i = rot
+    for i, f in divs.mpairs:
+      f = sin(fau.time + i.float32 * 2f, 1.7f, 0.03f)
     drawBend(patch(&"monster{item.monster.tier + 1}"), item.pos.vec2, divs, divs.len div 2, rotation = item.vel.rot, mixColor = col2)
 
 sys("drawFish", [Fish, Pos, Vel]):
