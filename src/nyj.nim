@@ -94,7 +94,7 @@ sys("fish", [Fish, Vel, Pos]):
 
     #avoid player
     if dst < 90f:
-      item.vel.rot = item.vel.rot.aapproach(avoidAngle, 2f * fau.delta)
+      item.vel.rot = item.vel.rot.aapproach(avoidAngle, 3f * fau.delta)
       item.fish.scare = item.fish.scare.lerp(1f, 1f * fau.delta)
     else:
       item.fish.scare = item.fish.scare.lerp(0f, 2f * fau.delta)
@@ -188,6 +188,9 @@ sys("draw", [Main]):
     fau.cam.use()
 
     drawBuffer(sys.buffer)
+
+    #let bend = sin(fau.time, 0.6f, 0.7f)
+    #drawBend("box".patch, vec2(), [bend, bend, bend, bend, bend, bend, bend, bend], 4)
   
   finish:
     discard
@@ -252,8 +255,7 @@ sys("drawPlayer", [Player, Pos, Vel]):
          item.pos.vec2 + off, 
          rotation = item.player.segments[i], 
          scl = vec2(dash * 0.3f + 1f + sin(item.vel.moveTime, 0.1f, 0.09f), -(item.vel.rot >= 90f.rad and item.vel.rot < 270f.rad).sign), 
-         mixColor = col3,
-         #origin = origins[i]
+         mixColor = col3
         )
     else: discard
 
