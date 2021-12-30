@@ -4,9 +4,9 @@ static: echo staticExec("faupack -p:../assets-raw/sprites -o:../assets/atlas")
 
 #palette
 const
-  col1 = %"110f25"
-  col2 = %"4f6b7a"
-  col3 = %"a7c6c5"
+  col1 = %"172B4C"
+  col2 = %"03113F"
+  col3 = %"3960B5"
 
 const 
   playerSpeed = 7f
@@ -15,8 +15,8 @@ const
   fishSpawned = 50
   despawnRange = targetWidth * 3
   sclPerForm = 0.09f
-  speeds = [1f, 1.13f, 1.1f, 1.1f]
-  dashSpeeds = [1f, 1.4f, 1.4f, 1.4f]
+  speeds = [1f, 1.13f, 1.13f, 1.2]
+  dashSpeeds = [1f, 1.3f, 1.3f, 1.5f]
 
 const origins = [vec2(18f, 9f), vec2(24.5f, 9.5f), vec2(30f, 9f)]
 
@@ -30,7 +30,7 @@ template fishTarget(): int = 5 + player.fetch(Player).form * 2
 
 template spawnFish(ftier: int, pos: Vec2) =
   let p = pos
-  discard newEntityWith(Vel(rot: rand(6f)), Pos(x : p.x, y: p.y), Fish(tier: ftier, variant: rand(1..2), size: 2f, speedMult: rand(-0.2f..0.1f), sizeMult: rand(-0.25f..0.2f)))
+  discard newEntityWith(Vel(rot: rand(6f)), Pos(x : p.x, y: p.y), Fish(dashCooldown: rand(2f..22f), tier: ftier, variant: rand(1..3), size: 2f, speedMult: rand(-0.2f..0.1f), sizeMult: rand(-0.25f..0.2f)))
 
 proc shake(intensity: float32) = shakeTime = max(shakeTime, intensity)
 
@@ -46,16 +46,20 @@ defineEffects:
     let off = vec2l(e.rotation, e.fin.powout(3f) * 7f)
     poly(e.pos + off, 10, 4f + 4f * e.fin.pow(4f), stroke = 2f * e.fout, color = col3)
     fillCircle(e.pos + vec2(1.1f) + off, 2f * e.fout, color = col3)
+  
   bubbleSmall(lifetime = 1f):
     let off = vec2l(90f.rad, e.fin.powout(3f) * 7f)
     poly(e.pos + off, 10, e.rotation * 4f + (e.rotation * 4f) * e.fin.pow(4f), stroke = 2f * e.fout, color = col3)
     fillCircle(e.pos + vec2(1.1f) * e.rotation + off, e.rotation * 2f * e.fout, color = col3)
+  
   dash(lifetime = 0.7f):
     particlesAngle(e.id, 2, e.pos, 29 * e.fin, e.rotation, 40f.rad):
       fillCircle(pos, 4f * e.fout, color = col3)
+  
   fishEat(lifetime = 7f):
-    particlesLife(e.id, 20, e.pos, e.fin.powout(3f), 50f):
+    particlesLife(e.id, (e.rotation * 13).int, e.pos, e.fin.powout(3f), 50f):
       draw(pieces[count mod pieces.len], pos, scl = vec2(0.9f * fout.powout(3f)), rotation = rot + count * 20f.rad, color = col3)
+  
   formUpgrade(lifetime = 1.5f):
     particlesLife(e.id, 30, playerPos, e.fout, 44f):
       fillCircle(pos, 4f * fout.powout(3f), color = col3)
@@ -69,13 +73,14 @@ registerComponents(defaultComponentOptions):
       rot: float32
       bub: float32
       moveTime: float32
+      dashTime: float32
     Player = object
       segments: array[4, float32]
       form: int
-      dashTime: float32
       fishEaten: int
     Fish = object
       tier: int
+      dashCooldown: float32
       shrink: float32
       variant: int
       size: float32
@@ -106,7 +111,7 @@ sys("fish", [Fish, Vel, Pos]):
     for i in sys.counts.mitems:
       i = 0
   all:
-    const speedPerTier = 0.11f
+    const speedPerTier = 0.2f
 
     #despawn when not in range anymore
     let dst = item.pos.vec2.dst(pp)
@@ -118,7 +123,7 @@ sys("fish", [Fish, Vel, Pos]):
       if item.fish.shrink >= 1f:
         sys.deleteList.add item.entity
 
-    var speed = 30f * (1f + item.fish.speedMult + speedPerTier * item.fish.tier)
+    var speed = 2.5f * (1f + item.fish.speedMult + speedPerTier * item.fish.tier)
 
     #record count increase
     sys.counts[item.fish.tier].inc
@@ -137,9 +142,21 @@ sys("fish", [Fish, Vel, Pos]):
     else:
       item.fish.scare = item.fish.scare.lerp(0f, 2f * fau.delta)
 
+    item.vel.vec *= (1f - fau.delta * 4f)
+
     let delta = vec2l(item.vel.rot, speed * fau.delta * (1f + item.fish.scare * 2.2f))
-    item.pos.x += delta.x
-    item.pos.y += delta.y
+    item.vel.vec += delta
+
+    item.pos.x += item.vel.vec.x
+    item.pos.y += item.vel.vec.y
+
+    item.fish.dashCooldown -= fau.delta * (1f + item.fish.tier * 0.1f)
+
+    #TODO
+    if item.fish.tier >= 1 and item.vel.dashTime <= -2 and item.fish.dashCooldown <= 0f and item.fish.scare >= 0.6f:
+      item.vel.vec += delta * 40f
+      item.vel.dashTime = 1f
+      item.fish.dashCooldown = rand(1f..3f)
 
     item.vel.moveTime += speed * fau.delta
 
@@ -151,7 +168,7 @@ sys("fish", [Fish, Vel, Pos]):
 
     #TODO hitbox size?
     if dst <= 16f + item.fish.size and pcomp.form == item.fish.tier:
-      effectFishEat(item.pos.vec2) #TODO vary size
+      effectFishEat(item.pos.vec2, rot = 1f + item.fish.tier * 0.5f) #TODO vary size
 
       shake(7f)
 
@@ -197,16 +214,10 @@ sys("playerMove", [Player, Vel, Pos]):
     let base = vec.angled(item.vel.rot)
     if vec.len > 0: item.vel.vec += base
 
-    if (keyLShift.tapped or keySpace.tapped) and item.player.dashTime <= -2f and vec.len > 0:
+    if (keyLShift.tapped or keySpace.tapped) and item.vel.dashTime <= -2f and vec.len > 0:
       item.vel.vec += base * 50f * dmult
-      item.player.dashTime = 1f
+      item.vel.dashTime = 1f
       shake(3f)
-
-    item.player.dashTime -= fau.delta * 1.8f
-
-    if item.player.dashTime > 0:
-      incTimer(item.vel.bub, 30f / 60f):
-         effectDash(item.pos.vec2 + randVec(2f), item.vel.rot)
 
     item.pos.x += item.vel.vec.x
     item.pos.y += item.vel.vec.y
@@ -227,6 +238,14 @@ sys("playerMove", [Player, Vel, Pos]):
       
       if chance(2f * fau.delta):
         effectBubble(item.pos.vec2 + vec2l(item.vel.rot, 11f) + randVec(7f), rot = 90f.rad)
+
+sys("dasher", [Vel, Pos]):
+  all:
+    if item.vel.dashTime > 0:
+      incTimer(item.vel.bub, 30f / 60f):
+         effectDash(item.pos.vec2 + randVec(2f), item.vel.rot)
+    
+    item.vel.dashTime -= fau.delta * 1.8f
 
 sys("draw", [Main]):
   fields:
@@ -317,19 +336,17 @@ const offsets = [vec2(-5f, 0f), vec2(), vec2(4f, 0f)]
 sys("drawPlayer", [Player, Pos, Vel]):
   all:
     let scling = 1f + sclPerForm * item.player.form.float32
-    var dash = item.player.dashTime.max(0f)
-    case item.player.form:
-    of 0, 1:
-      for i in 0..2:
-        var off = offsets[i].rotate(item.player.segments[1])
+    var dash = item.vel.dashTime.max(0f)
 
-        draw((&"form{item.player.form}-{i}").patch,
-         item.pos.vec2 + off, 
-         rotation = item.player.segments[i], 
-         scl = vec2(dash * 0.3f + 1f + sin(item.vel.moveTime, 0.1f, 0.09f), -(item.vel.rot >= 90f.rad and item.vel.rot < 270f.rad).sign) * scling, 
-         mixColor = col3
-        )
-    else: discard
+    for i in 0..2:
+      var off = offsets[i].rotate(item.player.segments[1])
+
+      draw((&"form{item.player.form}-{i}").patch,
+        item.pos.vec2 + off, 
+        rotation = item.player.segments[i], 
+        scl = vec2(dash * 0.3f + 1f + sin(item.vel.moveTime, 0.1f, 0.09f), -(item.vel.rot >= 90f.rad and item.vel.rot < 270f.rad).sign) * scling, 
+        mixColor = col3
+      )
 
 makeEffectsSystem()
 
