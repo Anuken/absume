@@ -17,11 +17,16 @@ const
 
 const origins = [vec2(18f, 9f), vec2(24.5f, 9.5f), vec2(30f, 9f)]
 
-var player: EntityRef
+var 
+  player: EntityRef
+  pieces: array[6, Patch]
+  shakeTime: float32
 
 template spawnFish(ftier: int, pos: Vec2) =
   let p = pos
   discard newEntityWith(Vel(rot: rand(6f)), Pos(x : p.x, y: p.y), Fish(tier: ftier, variant: rand(1..2), size: 2f, speedMult: rand(-0.2f..0.1f), sizeMult: rand(-0.25f..0.2f)))
+
+proc shake(intensity: float32) = shakeTime = max(shakeTime, intensity)
 
 defineEffects:
   bubble(lifetime = 1f):
@@ -31,9 +36,9 @@ defineEffects:
   dash(lifetime = 0.7f):
     particlesAngle(e.id, 2, e.pos, 29 * e.fin, e.rotation, 40f.rad):
       fillCircle(pos, 4f * e.fout, color = col3)
-  fishEat(lifetime = 6f):
-    particlesLife(e.id, 35, e.pos, e.fin.powout(3f), 50f):
-      fillCircle(pos, 5f * fout, color = col3)
+  fishEat(lifetime = 7f):
+    particlesLife(e.id, 20, e.pos, e.fin.powout(3f), 50f):
+      draw(pieces[count mod pieces.len], pos, scl = vec2(0.9f * fout.powout(3f)), rotation = rot + count * 20f.rad, color = col3)
 
 registerComponents(defaultComponentOptions):
   type
@@ -55,6 +60,7 @@ registerComponents(defaultComponentOptions):
       scare: float32
       speedMult: float32
       sizeMult: float32
+      segments: array[3, float32]
 
 sys("init", [Main]):
   init:
@@ -94,7 +100,7 @@ sys("fish", [Fish, Vel, Pos]):
 
     #avoid player
     if dst < 90f:
-      item.vel.rot = item.vel.rot.aapproach(avoidAngle, 3f * fau.delta)
+      item.vel.rot = item.vel.rot.aapproach(avoidAngle, 2.5f * fau.delta)
       item.fish.scare = item.fish.scare.lerp(1f, 1f * fau.delta)
     else:
       item.fish.scare = item.fish.scare.lerp(0f, 2f * fau.delta)
@@ -105,9 +111,18 @@ sys("fish", [Fish, Vel, Pos]):
 
     item.vel.moveTime += speed * fau.delta
 
+    let segc = item.fish.segments.len
+    let base = item.vel.rot
+
+    for i in 0..<segc:
+      item.fish.segments[i] = sin(fau.time + item.entity.entityId.float32 * 3f, 0.12, 0.34f) * item.fish.scare
+
     #TODO hitbox size?
     if dst <= 16f + item.fish.size and pcomp.form >= item.fish.tier:
       effectFishEat(item.pos.vec2) #TODO vary size
+      #TODO more "flesh" eat fx
+
+      shake(7f)
 
       let count = rand(1..4)
       for i in 0..<count:
@@ -146,6 +161,7 @@ sys("move", [Player, Vel, Pos]):
     if (keyLShift.tapped or keySpace.tapped and vec.len > 0) and item.player.dashTime <= -2f:
       item.vel.vec += base * 50f
       item.player.dashTime = 1f
+      shake(3f)
 
     item.player.dashTime -= fau.delta * 1.8f
 
@@ -180,6 +196,9 @@ sys("draw", [Main]):
   init:
     sys.buffer = newFramebuffer()
 
+    for i, piece in pieces.mpairs:
+      piece = patch(&"piece{i + 1}")
+
   start:
     if keyEscape.tapped: quitApp()
 
@@ -187,14 +206,20 @@ sys("draw", [Main]):
 
     sys.buffer.clear(col1)
     sys.buffer.resize((fau.size / scl).vec2i)
+
+    var offset = vec2()
+    if shakeTime > 0:
+      offset = randVec(shakeTime)
+      shakeTime -= fau.delta * 60f
     
-    fau.cam.update(fau.size / scl, player.fetch(Pos).vec2)
+    fau.cam.update(fau.size / scl, player.fetch(Pos).vec2 + offset)
     fau.cam.use()
 
     drawBuffer(sys.buffer)
 
-    #let bend = sin(fau.time, 0.6f, 0.7f)
-    #drawBend("box".patch, vec2(), [bend, bend, bend, bend, bend, bend, bend, bend], 4)
+    #let b = sin(fau.time, 0.5f, 0.3f)
+    #drawBend("dolphin1".patch, vec2(), [b, b, b, b], 2, color = colorRed)
+    #draw("dolphin1".patch, vec2(0f, -14f))
   
   finish:
     discard
@@ -239,7 +264,10 @@ sys("particles", [Main]):
 
 sys("drawFish", [Fish, Pos, Vel]):
   all:
-    draw((&"tier{item.fish.tier + 1}fish{item.fish.variant}").patch, item.pos.vec2, 
+    drawBend((&"tier{item.fish.tier + 1}fish{item.fish.variant}").patch,
+      item.pos.vec2, 
+      item.fish.segments,
+      1,
       rotation = item.vel.rot, 
       mixColor = col3,
       scl = vec2((1f + sin(item.vel.moveTime, 3.5f, 0.07f)), -(item.vel.rot >= 90f.rad and item.vel.rot < 270f.rad).sign) * (1f + item.fish.sizeMult)
