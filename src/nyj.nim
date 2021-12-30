@@ -259,9 +259,11 @@ sys("dasher", [Vel, Pos]):
 sys("draw", [Main]):
   fields:
     buffer: Framebuffer
+    lights: Framebuffer
 
   init:
     sys.buffer = newFramebuffer()
+    sys.lights = newFramebuffer()
 
     for i, piece in pieces.mpairs:
       piece = patch(&"piece{i + 1}")
@@ -269,10 +271,13 @@ sys("draw", [Main]):
   start:
     if keyEscape.tapped: quitApp()
 
-    let scl = fau.size.x / targetWidth.float32#fau.size.y / targetHeight.float32
+    let scl = fau.size.x / targetWidth.float32 #fau.size.y / targetHeight.float32
 
     sys.buffer.clear(col1)
     sys.buffer.resize((fau.size / scl).vec2i)
+
+    sys.lights.clear(colorClear)
+    sys.lights.resize(sys.buffer.size)
 
     var offset = vec2()
     if shakeTime > 0:
