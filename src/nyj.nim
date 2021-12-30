@@ -1,6 +1,6 @@
 import ecs, fau/presets/[basic, effects], fau/util/util, math, random, strformat
 
-static: echo staticExec("faupack -p:../assets-raw/sprites -o:../assets/atlas --min:1024 --max:2048")
+static: echo staticExec("faupack -p:../assets-raw/sprites -o:../assets/atlas --min:2048 --max:2048")
 
 #palette
 const
@@ -30,7 +30,7 @@ template fishTarget(): int = 5 + player.fetch(Player).form * 2
 
 template spawnFish(ftier: int, pos: Vec2) =
   let p = pos
-  discard newEntityWith(Vel(rot: rand(6f)), Pos(x : p.x, y: p.y), Fish(dashCooldown: rand(2f..22f), tier: ftier, variant: rand(1..3), size: 2f, speedMult: rand(-0.2f..0.1f), sizeMult: rand(-0.25f..0.2f)))
+  discard newEntityWith(Vel(rot: rand(6f)), Pos(x : p.x, y: p.y), Fish(dashCooldown: rand(2f..15f), tier: ftier, variant: rand(1..3), size: 2f, speedMult: rand(-0.2f..0.1f), sizeMult: rand(-0.25f..0.2f)))
 
 template spawnMonster(ftier: int, pos: Vec2) =
   let p = pos
