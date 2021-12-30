@@ -106,7 +106,7 @@ sys("fish", [Fish, Vel, Pos]):
     item.vel.moveTime += speed * fau.delta
 
     #TODO hitbox size?
-    if dst <= 20f + item.fish.size and pcomp.form >= item.fish.tier:
+    if dst <= 16f + item.fish.size and pcomp.form >= item.fish.tier:
       effectFishEat(item.pos.vec2) #TODO vary size
 
       let count = rand(1..4)
@@ -155,6 +155,10 @@ sys("move", [Player, Vel, Pos]):
 
     item.pos.x += item.vel.vec.x
     item.pos.y += item.vel.vec.y
+
+    #idle
+    if item.vel.vec.len < 0.1f:
+      item.player.segments[1] += sin(fau.time, 0.6, 0.01f)
 
     for i in 0..2:
       let next = if i == 2: item.vel.rot else: item.player.segments[i + 1]
@@ -238,7 +242,7 @@ sys("drawFish", [Fish, Pos, Vel]):
     draw((&"tier{item.fish.tier + 1}fish{item.fish.variant}").patch, item.pos.vec2, 
       rotation = item.vel.rot, 
       mixColor = col3,
-      scl = vec2(1f + sin(item.vel.moveTime, 3.5f, 0.07f), 1f) * (1f + item.fish.sizeMult)
+      scl = vec2((1f + sin(item.vel.moveTime, 3.5f, 0.07f)), -(item.vel.rot >= 90f.rad and item.vel.rot < 270f.rad).sign) * (1f + item.fish.sizeMult)
     )
 
 const offsets = [vec2(-5f, 0f), vec2(), vec2(4f, 0f)]
