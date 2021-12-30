@@ -9,7 +9,7 @@ const
   col3 = %"a7c6c5"
 
 const 
-  playerSpeed = 80f
+  playerSpeed = 7f
   targetHeight = 300 #TODO unused
   targetWidth = 600
   despawnRange = targetWidth * 4
@@ -23,6 +23,10 @@ defineEffects:
     let off = vec2(0f, e.fin.powout(3f) * 7f)
     poly(e.pos + off, 10, 4f + 4f * e.fin.pow(4f), stroke = 2f * e.fout, color = col3)
     fillCircle(e.pos + vec2(1.1f) + off, 2f * e.fout, color = col3)
+  dash(lifetime = 0.7f):
+    particlesAngle(e.id, 2, e.pos, 29 * e.fin, e.rotation, 40f.rad):
+      fillCircle(pos, 4f * e.fout, color = col3)
+      #lineAngle(pos, rot, 8f * e.fin, stroke = 4 * e.fout, color = col3)
 
 registerComponents(defaultComponentOptions):
   type
@@ -35,6 +39,7 @@ registerComponents(defaultComponentOptions):
     Player = object
       segments: array[4, float32]
       form: int
+      dashTime: float32
     Fish = object
 
 sys("init", [Main]):
@@ -63,7 +68,17 @@ sys("move", [Player, Vel, Pos]):
     item.vel.vec *= (1f - fau.delta * 4f)
 
     let base = vec.angled(item.vel.rot)
-    if vec.len > 0: item.vel.vec = base
+    if vec.len > 0: item.vel.vec += base
+
+    if keyLShift.tapped or keySpace.tapped and vec.len > 0 and item.player.dashTime <= -1f:
+      item.vel.vec += base * 50f
+      item.player.dashTime = 1f
+
+    item.player.dashTime -= fau.delta * 1.8f
+
+    if item.player.dashTime > 0:
+      incTimer(item.vel.bub, 30f / 60f):
+         effectDash(item.pos.vec2 + randVec(2f), item.vel.rot)
 
     item.pos.x += item.vel.vec.x
     item.pos.y += item.vel.vec.y
@@ -76,9 +91,9 @@ sys("move", [Player, Vel, Pos]):
       item.player.segments[0] += sin(fau.time, 0.14, 0.02f)
       item.player.segments[1] -= sin(fau.time, 0.14, 0.02f)
 
-
       item.vel.moveTime += fau.delta
-      incTimer(item.vel.bub, 3f / 60f):
+      
+      if chance(2f * fau.delta):
         effectBubble(item.pos.vec2 + vec2l(item.vel.rot, 11f) + randVec(7f))
 
 sys("draw", [Main]):
@@ -146,6 +161,7 @@ const offsets = [vec2(-5f, 0f), vec2(), vec2(4f, 0f)]
 
 sys("drawPlayer", [Player, Pos, Vel]):
   all:
+    var dash = item.player.dashTime.max(0f)
     case item.player.form:
     of 0:
       for i in 0..2:
@@ -154,7 +170,7 @@ sys("drawPlayer", [Player, Pos, Vel]):
         draw(("form0-" & $i).patch,
          item.pos.vec2 + off, 
          rotation = item.player.segments[i], 
-         scl = vec2(1f + sin(item.vel.moveTime, 0.1f, 0.09f), -(item.vel.rot >= 90f.rad and item.vel.rot < 270f.rad).sign), 
+         scl = vec2(dash * 0.3f + 1f + sin(item.vel.moveTime, 0.1f, 0.09f), -(item.vel.rot >= 90f.rad and item.vel.rot < 270f.rad).sign), 
          mixColor = col3,
          #origin = origins[i]
         )
