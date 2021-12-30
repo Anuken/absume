@@ -12,14 +12,14 @@ const
   speeds = [1f, 1.13f, 1.13f, 1.2]
   dashSpeeds = [1f, 1.3f, 1.3f, 1.5f]
   darknessLevels = [0f, 0.1f, 1f, 1f]
-  lightRadii = [0f, 40f, 100f, 90f]
-  monsterOffsets = [-180f.rad, -90f.rad, -90f.rad, -180f.rad]
+  lightRadii = [0f, 40f, 150f, 140f]
+  monsterOffsets = [-180f.rad, 90f.rad, 90f.rad, -180f.rad]
 
 const 
   playerSpeed = 7f
   #targetHeight = 300 #TODO unused
   targetWidth = 600
-  fishSpawned = 40
+  fishSpawned = 35
   despawnRange = targetWidth * 3
   monsterDespawnRange = targetWidth * 5f
   sclPerForm = 0.09f
@@ -35,15 +35,15 @@ var
   darkAlpha = 0f
   curForm = 0
 
-template fishTarget(): int = 5 + curForm * 2
+template fishTarget(): int = 4 + curForm * 2
 
 template spawnFish(ftier: int, pos: Vec2) =
   let p = pos
-  discard newEntityWith(Vel(rot: rand(6f)), Pos(x : p.x, y: p.y), Fish(dashCooldown: rand(2f..15f), tier: ftier, variant: rand(1..3), size: 2f, speedMult: rand(-0.2f..0.1f), sizeMult: rand(-0.25f..0.2f)))
+  discard newEntityWith(Vel(rot: rand(6f)), Pos(x : p.x, y: p.y), Fish(dashCooldown: rand(2f..14f), tier: ftier, variant: rand(1..3), size: 2f, speedMult: rand(-0.2f..0.1f), sizeMult: rand(-0.25f..0.2f)))
 
 template spawnMonster(ftier: int, pos: Vec2) =
   let p = pos
-  discard newEntityWith(Vel(rot: rand(0f..10f)), Pos(x: p.x, y: p.y), Monster(tier: ftier, radius: patch("monster" & $ftier).width / 2f))
+  discard newEntityWith(Vel(rot: (pos - playerPos).angle - monsterOffsets[ftier] + 90f.rad), Pos(x: p.x, y: p.y), Monster(tier: ftier, radius: patch("monster" & $ftier).width / 2f))
 
 template gameOver() = discard
 
@@ -114,15 +114,27 @@ registerComponents(defaultComponentOptions):
 
 sys("init", [Main]):
   init:
-    player = newEntityWith(Vel(), Pos(), Player())
+    player = newEntityWith(Vel(), Pos(), Player(form: 0))
 
-    spawnMonster(0, vec2(40f))
+    #spawnMonster(3, vec2(0f, 100f))
 
     const spread = 800f
-    for i in 0..24:
+    for i in 0..10:
       spawnFish(0, vec2(rand(-spread..spread), rand(-spread..spread)))
 
 makeTimedSystem()
+
+sys("spawnFish", [Main]):
+  fields:
+    timer: float32
+  start:
+    let p = player.fetch(Player)
+
+    if sysFish.counts[curForm] < fishSpawned - p.fishEaten:
+      #spawn a fish every x seconds
+      incTimer(sys.timer, 1f / 1f * fau.delta):
+        let vec = vec2l(rand(360f.rad), targetWidth.float32 * rand(1.5f..2.5f)) + fau.cam.pos
+        spawnFish(curForm, vec)
 
 sys("fish", [Fish, Vel, Pos]):
   fields:
@@ -136,7 +148,7 @@ sys("fish", [Fish, Vel, Pos]):
     for i in sys.counts.mitems:
       i = 0
   all:
-    const speedPerTier = 0.21f
+    const speedPerTier = 0.23f
 
     #despawn when not in range anymore
     let dst = item.pos.vec2.dst(pp)
@@ -206,16 +218,26 @@ sys("fish", [Fish, Vel, Pos]):
 
       sys.deleteList.add item.entity
 
-
 sys("monsterSpawn", [Monster, Vel, Pos]):
   start:
     var count = 0
+    var lastPos: Vec2
   all:
     count.inc
+    lastPos = item.pos.vec2
   finish:
+    template randTier(): int = max(rand(-1..0) + curForm, 0)
+    template randDst(): float32 =  targetWidth.float32 * rand(3.3f..4.5f)
+
     if count == 0:
-        let vec = vec2l(rand(360f.rad), targetWidth.float32 * rand(4f..5f)) + fau.cam.pos
-        spawnMonster(curForm, vec)
+      #spawn in front if there's zero
+      let dir = player.fetch(Vel).rot + rand(-10f..10f).rad
+      spawnMonster(randTier(), vec2l(dir, randDst()) + fau.cam.pos)
+      #TODO spawn three
+    elif count == 1 and curForm >= 1: 
+      #spawn behind prev if there's already one monster, surrounding the player
+      spawnMonster(randTier(), -(lastPos - fau.cam.pos).nor * randDst() + fau.cam.pos)
+
 
 sys("monsterMove", [Monster, Vel, Pos]):
   start:
@@ -223,7 +245,7 @@ sys("monsterMove", [Monster, Vel, Pos]):
     let pp = player.fetch(Pos).vec2
   all:
     let vec = pp - item.pos.vec2
-    let speed = 13f + item.monster.tier.float32*4f
+    let speed = 17f + item.monster.tier.float32*5f
 
     if not within(pp, item.pos.vec2, monsterDespawnRange + item.monster.radius):
       sys.deleteList.add item.entity
@@ -234,20 +256,7 @@ sys("monsterMove", [Monster, Vel, Pos]):
     item.pos.x += delta.x
     item.pos.y += delta.y
 
-    item.vel.rot = aapproach(item.vel.rot, (delta.angle - monsterOffsets[item.monster.tier]).mod(360f.rad), 0.01f * fau.delta)
-    
-
-sys("spawnFish", [Main]):
-  fields:
-    timer: float32
-  start:
-    let p = player.fetch(Player)
-
-    if sysFish.counts[curForm] < fishSpawned - p.fishEaten:
-      #spawn a fish every x seconds
-      incTimer(sys.timer, 1f / 1f * fau.delta):
-        let vec = vec2l(rand(360f.rad), targetWidth.float32 * rand(1f..1.9f)) + fau.cam.pos
-        spawnFish(curForm, vec)
+    item.vel.rot = aapproach(item.vel.rot, (delta.angle - monsterOffsets[item.monster.tier]).mod(360f.rad), 0.02f * fau.delta)
 
 sys("playerMove", [Player, Vel, Pos]):
   all:
@@ -438,11 +447,12 @@ sys("drawFish", [Fish, Pos, Vel]):
       1,
       rotation = item.vel.rot, 
       mixColor = col3,
-      scl = vec2((1f + sin(item.vel.moveTime, 3.5f, 0.07f)), -(item.vel.rot >= 90f.rad and item.vel.rot < 270f.rad).sign) * (1f + item.fish.sizeMult) * lerp(1f, 0f, item.fish.shrink)
+      scl = vec2((1f + sin(item.vel.moveTime, 3.5f, 0.07f)), -(item.vel.rot >= 90f.rad and item.vel.rot < 270f.rad).sign) * (1f + item.fish.sizeMult) * lerp(1f, 0f, item.fish.shrink),
+      z = lightLayer + 2
     )
 
-    if item.fish.tier >= 1:
-      light(item.pos.vec2, 30f * (1f - item.fish.shrink))
+    #if item.fish.tier >= 1:
+    #  light(item.pos.vec2, 30f * (1f - item.fish.shrink))
 
 const offsets = [vec2(-5f, 0f), vec2(), vec2(4f, 0f)]
 
