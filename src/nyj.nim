@@ -17,14 +17,15 @@ const
   sclPerForm = 0.09f
   speeds = [1f, 1.13f, 1.13f, 1.2]
   dashSpeeds = [1f, 1.3f, 1.3f, 1.5f]
-
-const origins = [vec2(18f, 9f), vec2(24.5f, 9.5f), vec2(30f, 9f)]
+  lightLayer = 10f
+  origins = [vec2(18f, 9f), vec2(24.5f, 9.5f), vec2(30f, 9f)]
 
 var 
   player: EntityRef
   pieces: array[6, Patch]
   shakeTime: float32
   playerPos: Vec2
+  drawLight: bool
 
 template fishTarget(): int = 5 + player.fetch(Player).form * 2
 
@@ -44,6 +45,10 @@ template checkForm() =
     p.form.inc
     p.fishEaten = 0
     effectFormUpgrade(player.fetch(Pos).vec2)
+
+proc light(pos: Vec2, radius = 100f) =
+  if drawLight:
+    draw("light".patch, pos, size = vec2(radius * 2f), z = lightLayer, blend = blendAdditive)
 
 defineEffects:
   bubble(lifetime = 1f):
@@ -161,7 +166,6 @@ sys("fish", [Fish, Vel, Pos]):
 
     item.fish.dashCooldown -= fau.delta * (1f + item.fish.tier * 0.25f)
 
-    #TODO
     if item.fish.tier >= 1 and item.vel.dashTime <= -2 and item.fish.dashCooldown <= 0f and item.fish.scare >= 0.6f:
       item.vel.vec += delta * 40f
       item.vel.dashTime = 1f
@@ -185,13 +189,11 @@ sys("fish", [Fish, Vel, Pos]):
       for i in 0..<count:
         effectBubble(item.pos.vec2 + randVec(5f), rot = rand(360f.rad), life = rand(2f..4f))
       
-      #TODO level up
       if pcomp.form == item.fish.tier:
         pcomp.fishEaten.inc
         checkForm()
 
       sys.deleteList.add item.entity
-    #TODO AI
 
 sys("spawn", [Main]):
   fields:
@@ -260,10 +262,34 @@ sys("draw", [Main]):
   fields:
     buffer: Framebuffer
     lights: Framebuffer
+    lightShader: Shader
+    dither: Texture
 
   init:
+    sys.dither = loadTexture("dither.png")
+    sys.dither.wrap = twRepeat
     sys.buffer = newFramebuffer()
     sys.lights = newFramebuffer()
+    sys.lightShader = newShader(screenspaceVertex, """
+    #define ditherSize vec2(8.0)
+
+    uniform sampler2D u_texture;
+    uniform sampler2D u_dither;
+    uniform vec4 u_color;
+    uniform vec2 u_pos;
+    uniform vec2 u_res;
+
+    varying vec2 v_uv;
+
+    void main(){
+      float a = texture2D(u_texture, v_uv).a;
+      vec2 coords = v_uv * u_res + u_pos;
+      float dsample = texture2D(u_dither, coords / ditherSize).r;
+      float result = step(dsample, a);
+
+      gl_FragColor = mix(u_color, vec4(0.0), result);
+    }
+    """)
 
     for i, piece in pieces.mpairs:
       piece = patch(&"piece{i + 1}")
@@ -273,11 +299,15 @@ sys("draw", [Main]):
 
     let scl = fau.size.x / targetWidth.float32 #fau.size.y / targetHeight.float32
 
+    #TODO criteria
+    drawLight = true
+
     sys.buffer.clear(col1)
     sys.buffer.resize((fau.size / scl).vec2i)
 
-    sys.lights.clear(colorClear)
-    sys.lights.resize(sys.buffer.size)
+    if drawLight:
+      sys.lights.clear(colorClear)
+      sys.lights.resize(sys.buffer.size)
 
     var offset = vec2()
     if shakeTime > 0:
@@ -288,6 +318,17 @@ sys("draw", [Main]):
     fau.cam.use()
 
     drawBuffer(sys.buffer)
+
+    if drawLight:
+      drawLayer(lightLayer, proc() = drawBuffer(sysDraw.lights)) do:
+        drawBuffer(sysDraw.buffer)
+
+        fau.quad.render(sysDraw.lightShader, meshParams(buffer = sysDraw.buffer, blend = blendNormal)):
+          texture = sysDraw.lights.sampler
+          dither = sysDraw.dither.sampler(1)
+          color = col1
+          pos = fau.cam.pos
+          res = sysDraw.lights.size.vec2
 
     #let b = sin(fau.time, 0.5f, 0.3f)
     #drawBend("dolphin1".patch, vec2(), [b, b, b, b], 2, color = colorRed)
@@ -353,10 +394,14 @@ sys("drawFish", [Fish, Pos, Vel]):
       scl = vec2((1f + sin(item.vel.moveTime, 3.5f, 0.07f)), -(item.vel.rot >= 90f.rad and item.vel.rot < 270f.rad).sign) * (1f + item.fish.sizeMult) * lerp(1f, 0f, item.fish.shrink)
     )
 
+    light(item.pos.vec2, 30f)
+
 const offsets = [vec2(-5f, 0f), vec2(), vec2(4f, 0f)]
 
 sys("drawPlayer", [Player, Pos, Vel]):
   all:
+    light(item.pos.vec2, 100f)
+
     let scling = 1f + sclPerForm * item.player.form.float32
     var dash = item.vel.dashTime.max(0f)
 
