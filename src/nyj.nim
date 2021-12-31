@@ -9,7 +9,7 @@ const
   col3 = %"3960B5"
 
   #level constants
-  speeds = [1f, 1.13f, 1.13f, 1.2]
+  speeds = [1f, 1.13f, 1.13f, 1.23]
   dashSpeeds = [1f, 1.3f, 1.3f, 1.5f]
   darknessLevels = [0f, 0.1f, 1f, 1f]
   lightRadii = [0f, 40f, 170f, 160f]
@@ -28,13 +28,17 @@ const
   fishSpawned = 35
   despawnRange = targetWidth * 3
   monsterDespawnRange = targetWidth * 5f
-  sclPerForm = 0.04f
+  sclPerForm = 0.05f
   lightLayer = 10f
   soundInterval = 5f..8f
   firstSpawnDelay = 10f
 
 var 
+  ended = false
   started = false
+  ending = false
+  endSize = 0f
+  endTimer = 0f
   startSize = 1f
   monsterSounds: array[4, seq[Sound]]
   player: EntityRef
@@ -109,7 +113,8 @@ template reset() =
   monsterMinDst = 0f
   deathTimer = 0f
   firstSpawnTimer = 0f
-  player = newEntityWith(Vel(), Pos(), Player(form: 0))
+  #TODO unset
+  player = newEntityWith(Vel(), Pos(), Player(form: 0, fishEaten: 0))
 
   #spawnMonster(3, vec2(800f, 0f))
 
@@ -126,6 +131,8 @@ template checkForm() =
     p.fishEaten = 0
     effectFormUpgrade(player.fetch(Pos).vec2)
     soundMutate.play(pitch = rand(0.9f..1.1f))
+
+template spawnDolphins(): bool = curForm == 3 and player.fetch(Player).fishEaten >= fishTarget()
 
 template pitched(): float32 = rand(0.9f..1.1f)
 
@@ -214,12 +221,13 @@ sys("spawnFish", [Main]):
     timer: float32
   start:
     let p = player.fetch(Player)
+    let toSpawn = if spawnDolphins(): 4 else: curForm
 
-    if sysFish.counts[curForm] < fishSpawned - p.fishEaten:
+    if sysFish.counts[toSpawn] < fishSpawned - p.fishEaten:
       #spawn a fish every x seconds
       incTimer(sys.timer, 1f / 1f * fau.delta):
         let vec = vec2l(rand(360f.rad), targetWidth.float32 * rand(1.5f..2.5f)) + fau.cam.pos
-        spawnFish(curForm, vec)
+        spawnFish(toSpawn, vec)
 
 sys("fish", [Fish, Vel, Pos]):
   fields:
@@ -232,14 +240,14 @@ sys("fish", [Fish, Vel, Pos]):
     for i in sys.counts.mitems:
       i = 0
   all:
-    const speedPerTier = 0.28f
+    const speedPerTier = 0.24f
 
     #despawn when not in range anymore
     let dst = item.pos.vec2.dst(pp)
     if dst > despawnRange:
       sys.deleteList.add item.entity
 
-    if item.fish.tier != curForm:
+    if item.fish.tier < curForm:
       item.fish.shrink += fau.delta / 1f
       if item.fish.shrink >= 1f:
         sys.deleteList.add item.entity
@@ -254,8 +262,8 @@ sys("fish", [Fish, Vel, Pos]):
     let avoidAngle = (item.pos.vec2 - pp).angle
 
     #avoid player
-    if dst < 90f + item.fish.tier * 12f:
-      item.vel.rot = item.vel.rot.aapproach(avoidAngle, 2.5f * fau.delta * (0.2f + item.fish.tier))
+    if dst < 90f + item.fish.tier * 9f:
+      item.vel.rot = item.vel.rot.aapproach(avoidAngle, 2.5f * fau.delta * (0.2f + item.fish.tier * 0.5f))
       item.fish.scare = item.fish.scare.lerp(1f, 1f * fau.delta)
 
       if chance(1.7f * fau.delta):
@@ -276,7 +284,7 @@ sys("fish", [Fish, Vel, Pos]):
     if item.fish.tier >= 1 and item.vel.dashTime <= -2 and item.fish.dashCooldown <= 0f and item.fish.scare >= 0.13f:
       item.vel.vec += delta * 40f
       item.vel.dashTime = 1f
-      item.fish.dashCooldown = rand(1f..3f)
+      item.fish.dashCooldown = rand(1f..4f)
 
     item.vel.moveTime += speed * fau.delta
 
@@ -286,7 +294,7 @@ sys("fish", [Fish, Vel, Pos]):
     for i in 0..<segc:
       item.fish.segments[i] = sin(fau.time + item.entity.entityId.float32 * 3f, 0.12, 0.34f) * item.fish.scare
 
-    if dst <= 16f + item.fish.size and curForm == item.fish.tier:
+    if dst <= 16f + item.fish.size:
       effectFishEat(item.pos.vec2, rot = 1f + item.fish.tier * 0.5f)
 
       soundEat.play(pitch = pitched())
@@ -304,6 +312,11 @@ sys("fish", [Fish, Vel, Pos]):
         checkForm()
 
       sys.deleteList.add item.entity
+
+      #dolphin gotten, end of game
+      if item.fish.tier == 4:
+        ending = true
+
 
 sys("monsterSpawn", [Monster, Vel, Pos]):
   fields:
@@ -335,7 +348,13 @@ sys("monsterSpawn", [Monster, Vel, Pos]):
       elif count == 2 and curForm >= 2: 
         #spawn below or above player at random
         #TODO is this too many?
-        spawnMonster(randTier(), -(lastPos - fau.cam.pos).nor.rotate((rand(0..1).float32 - 0.5f) * 2f * 90f.rad) * randDst() + fau.cam.pos)
+        let 
+          base = -(lastPos - fau.cam.pos).nor
+          dir1 = (rand(0..1).float32 - 0.5f) * 2f * 90f.rad
+
+        spawnMonster(randTier(), base.rotate(dir1) * randDst() + fau.cam.pos)
+        if count == 3 and curForm >= 3:
+          spawnMonster(randTier(), base.rotate(-dir1) * randDst() + fau.cam.pos)
 
 sys("monsterMove", [Monster, Vel, Pos]):
   start:
@@ -514,7 +533,23 @@ sys("draw", [Main]):
       deathTimer = max(deathTimer, 0f)
 
     coverAlpha = lerp(coverAlpha, monsterAlpha, (3f + monsterLevel*3f) * (1f + touching.float32 * 5f) * fau.delta)
-    darkAlpha = lerp(darkAlpha, darknessLevels[curForm], 2f * fau.delta)
+    darkAlpha = lerp(darkAlpha, darknessLevels[curForm] + ending.float32 * 1.3f, 1.5f * fau.delta)
+
+    if ending:
+      shake(9f)
+
+      if darkAlpha >= 2f:
+        ended = true
+        sysSpawnFish.paused = true
+        sysMonsterMove.paused = true
+        sysPlayerMove.paused = true
+        sysFish.clear()
+        sysMonsterMove.clear()
+      
+    if ended:
+      endTimer += fau.delta
+      if endTimer >= 1f:
+        endSize = lerp(endSize, 1f, 1f * fau.delta)
 
     drawLight = darkAlpha > 0 or coverAlpha > 0
 
@@ -563,10 +598,13 @@ sys("draw", [Main]):
 
 
     if startSize > 0.01f:
-      draw("start".patch, fau.cam.pos + vec2(0, fau.cam.height * (1f - startSize)), z = 2f)
+      draw("start".patch, fau.cam.pos + vec2(0, fau.cam.height * (1f - startSize)), scl = vec2(startSize), z = lightLayer + 5f)
     
     if started:
       startSize = lerp(startSize, 0f, fau.delta * 4f)
+    
+    if ended:
+      draw("end".patch, fau.cam.pos, scl = vec2(endSize), z = lightLayer + 5f)
 
   finish:
     discard
