@@ -75,11 +75,11 @@ proc calcVoice(pos: Vec2, dst: float32): tuple[pan: float32, vol: float32, lop: 
     xdst = pos.x - playerPos.x
     #TODO hard cutoff might be bad, I don't know
     pan = if xdst.abs <= 200f: 0f else: clamp(xdst / 800f, -1f, 1f)
-    volDst = targetWidth * 3f
+    volDst = targetWidth * 3.1f
     #0 to 1 as player gets closer; should it be exponential?
     volScl = max(1f - dst / volDst, 0f).pow(1.1f)
     #0 to 1 as player gets closer; lifted up as low-pass only applies when really far away
-    lopScl = max(1f - dst / volDst, 0f).powout(2.5f)
+    lopScl = max(1f - dst / volDst, 0f).powout(2f)
 
     lopMin = 70f
     lopMax = 500f
@@ -365,7 +365,7 @@ sys("monsterMove", [Monster, Vel, Pos]):
     
     let 
       vec = pp - item.pos.vec2
-      speed = 18f + item.monster.tier.float32*7f
+      speed = 19f + item.monster.tier.float32*7f
 
       bh = monsterBoxes[item.monster.tier]
       p = patch(&"monster{item.monster.tier + 1}")
@@ -652,7 +652,7 @@ sys("drawMonsters", [Pos, Monster, Vel]):
     var divs: array[12, float32]
     var rot = fau.time.sin(1.2f, 0.04f)
     for i, f in divs.mpairs:
-      f = sin(fau.time + i.float32 * 2f, 1.7f, 0.03f)
+      f = sin(fau.time + i.float32 * 2f, 1.7f, 0.034f)
     drawBend(patch(&"monster{item.monster.tier + 1}"), item.pos.vec2, divs, divs.len div 2, rotation = item.vel.rot, mixColor = col2)
 
 sys("drawFish", [Fish, Pos, Vel]):
