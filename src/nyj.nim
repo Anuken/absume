@@ -519,10 +519,10 @@ sys("draw", [Main]):
     drawLight = darkAlpha > 0 or coverAlpha > 0
 
     if monsterAlpha > 0.01f:
-      let vol = monsterAlpha * 7f
+      let vol = monsterAlpha * 6f
 
       if not noiseVoice.valid:
-        noiseVoice = soundNoise.play(volume = vol, loop = true, pitch = 0.1f)
+        noiseVoice = soundNoise.play(volume = vol, loop = true, pitch = 0.24f)
       
       noiseVoice.volume = vol
       noiseVoice.setFilterParam(0, biquadFrequency, 2000f)
