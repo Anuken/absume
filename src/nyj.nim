@@ -22,7 +22,7 @@ const
     rect(54f, 192f, 677f, 543f)
   ]
 
-  playerSpeed = 7f * 5f
+  playerSpeed = 7f
   #targetHeight = 300 #unused
   targetWidth = 600
   fishSpawned = 35
