@@ -3,7 +3,7 @@ author        = "Anuken"
 description   = "none"
 license       = "GPL-3.0"
 srcDir        = "src"
-bin           = @["nyj"]
+bin           = @["absume"]
 binDir        = "build"
 
 requires "nim >= 1.6.2"
@@ -16,7 +16,7 @@ template shell(args: string) =
   except OSError: quit(1)
 
 const
-  app = "nyj"
+  app = "absume"
 
   builds = [
     #(name: "linux64", os: "linux", cpu: "amd64", args: ""), #doesn't work due to glibc
@@ -38,7 +38,7 @@ task web, "Deploy web build":
   writeFile("build/web/index.html", readFile("build/web/index.html").replace("$title$", capitalizeAscii(app)))
 
 task deploy, "Build for all platforms":
-  #webTask()
+  webTask()
 
   for name, os, cpu, args in builds.items:
     let

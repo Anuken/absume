@@ -20,7 +20,7 @@ jobs:
       - name: Install packages needed for GLFW
         run: |
           sudo apt install -y xorg-dev libgl1-mesa-dev
-      - name: Build nyj
+      - name: Build absume
         run: |
           nimble build -Y
       - name: Setup Emscripten
@@ -31,8 +31,8 @@ jobs:
         run: |
           git config --global user.email "cli@github.com"
           git config --global user.name "Github Actions"
-          git clone --recursive https://github.com/Anuken/nyj.git
-          cd nyj
+          git clone --recursive https://github.com/Anuken/absume.git
+          cd absume
           nimble web
           git checkout gh-pages
           git pull
@@ -41,5 +41,5 @@ jobs:
           rm -rf build/ assets/ fau/
           git add .
           git commit --allow-empty -m "Updating pages"
-          git push https://Anuken:${{ secrets.API_TOKEN_GITHUB }}@github.com/Anuken/nyj
+          git push https://Anuken:${{ secrets.API_TOKEN_GITHUB }}@github.com/Anuken/absume
           
