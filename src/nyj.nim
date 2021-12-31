@@ -328,7 +328,7 @@ sys("monsterSpawn", [Monster, Vel, Pos]):
         spawnMonster(randTier(), -(lastPos - fau.cam.pos).nor * randDst() + fau.cam.pos)
       elif count == 2 and curForm >= 2: 
         #spawn below or above player at random
-        #TODO is this necessary?
+        #TODO is this too many?
         spawnMonster(randTier(), -(lastPos - fau.cam.pos).nor.rotate((rand(0..1).float32 - 0.5f) * 2f * 90f.rad) * randDst() + fau.cam.pos)
 
 sys("monsterMove", [Monster, Vel, Pos]):
@@ -505,7 +505,7 @@ sys("draw", [Main]):
       deathTimer -= fau.delta
       deathTimer = max(deathTimer, 0f)
 
-    coverAlpha = lerp(monsterAlpha, monsterAlpha, (3f + monsterLevel*3f) * (1f + touching.float32 * 5f) * fau.delta)
+    coverAlpha = lerp(coverAlpha, monsterAlpha, (3f + monsterLevel*3f) * (1f + touching.float32 * 5f) * fau.delta)
     darkAlpha = lerp(darkAlpha, darknessLevels[curForm], 2f * fau.delta)
 
     drawLight = darkAlpha > 0 or coverAlpha > 0
