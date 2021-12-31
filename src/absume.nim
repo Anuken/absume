@@ -412,11 +412,17 @@ sys("monsterMove", [Monster, Vel, Pos]):
 
 sys("playerMove", [Player, Vel, Pos]):
   all:
-    curForm = player.fetch(Player).form
+    curForm = item.player.form
+
+    var ax = vec2(axis(keyA, keyD), axis(keyS, keyW))
+    
+    if keyMouseLeft.down:
+      ax = (fau.mouse - fau.size/2f).nor
+
     let 
       dmult = dashSpeeds[item.player.form]
       smult = speeds[item.player.form]
-      vec = vec2(axis(keyA, keyD), axis(keyS, keyW)).lim(1f) * playerSpeed * fau.delta * smult
+      vec = ax.lim(1f) * playerSpeed * fau.delta * smult
     
     if vec.len > 0:
       started = true
@@ -429,7 +435,7 @@ sys("playerMove", [Player, Vel, Pos]):
     let base = vec.angled(item.vel.rot)
     if vec.len > 0: item.vel.vec += base
 
-    if (keyLShift.tapped or keySpace.tapped) and item.vel.dashTime <= -2f and vec.len > 0:
+    if (keyLShift.tapped or keySpace.tapped or keyMouseRight.tapped) and item.vel.dashTime <= -2f and vec.len > 0:
       item.vel.vec += base * 50f * dmult
       item.vel.dashTime = 1f
       soundDash.play(pitch = pitched())
