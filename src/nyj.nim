@@ -19,7 +19,7 @@ const
     rect(42f, 362f, 1265f, 222f),
     rect(116f, 82f, 309f, 447f),
     rect(100f, 190f, 509f, 233f),
-    rect(54f, 192f, 677f, 543f)
+    rect(120f, 220f, 521f, 459f)
   ]
 
   playerSpeed = 7f
@@ -28,9 +28,10 @@ const
   fishSpawned = 35
   despawnRange = targetWidth * 3
   monsterDespawnRange = targetWidth * 5f
-  sclPerForm = 0.09f
+  sclPerForm = 0.04f
   lightLayer = 10f
   soundInterval = 5f..8f
+  firstSpawnDelay = 10f
 
 var 
   monsterSounds: array[4, seq[Sound]]
@@ -46,12 +47,13 @@ var
   monsterMinDst = 0f
   globalLowpass: BiquadFilter
   noiseVoice: Voice
+  firstSpawnTimer = 0f
 
-template fishTarget(): int = 4 + curForm * 2
+template fishTarget(): int = 5 + curForm * 2
 
 template spawnFish(ftier: int, pos: Vec2) =
   let p = pos
-  discard newEntityWith(Vel(rot: rand(6f)), Pos(x : p.x, y: p.y), Fish(dashCooldown: rand(0f..8f), tier: ftier, variant: rand(1..3), size: 2f, speedMult: rand(-0.2f..0.1f), sizeMult: rand(-0.25f..0.2f)))
+  discard newEntityWith(Vel(rot: rand(6f)), Pos(x : p.x, y: p.y), Fish(dashCooldown: rand(1f..11f), tier: ftier, variant: rand(1..3), size: 2f, speedMult: rand(-0.2f..0.1f), sizeMult: rand(-0.25f..0.2f)))
 
 template spawnMonster(ftier: int, pos: Vec2) =
   let p = pos
@@ -101,7 +103,10 @@ template reset() =
   curForm = 0
   monsterMinDst = 0f
   deathTimer = 0f
+  firstSpawnTimer = 0f
   player = newEntityWith(Vel(), Pos(), Player(form: 0))
+
+  #spawnMonster(3, vec2(800f, 0f))
 
   const spread = 800f
   for i in 0..10:
@@ -222,7 +227,7 @@ sys("fish", [Fish, Vel, Pos]):
     for i in sys.counts.mitems:
       i = 0
   all:
-    const speedPerTier = 0.26f
+    const speedPerTier = 0.28f
 
     #despawn when not in range anymore
     let dst = item.pos.vec2.dst(pp)
@@ -244,7 +249,7 @@ sys("fish", [Fish, Vel, Pos]):
     let avoidAngle = (item.pos.vec2 - pp).angle
 
     #avoid player
-    if dst < 90f - item.fish.tier * 3f:
+    if dst < 90f + item.fish.tier * 12f:
       item.vel.rot = item.vel.rot.aapproach(avoidAngle, 2.5f * fau.delta * (0.2f + item.fish.tier))
       item.fish.scare = item.fish.scare.lerp(1f, 1f * fau.delta)
 
@@ -263,7 +268,7 @@ sys("fish", [Fish, Vel, Pos]):
 
     item.fish.dashCooldown -= fau.delta * (1f + item.fish.tier * 0.3f)
 
-    if item.fish.tier >= 1 and item.vel.dashTime <= -2 and item.fish.dashCooldown <= 0f and item.fish.scare >= 0.6f:
+    if item.fish.tier >= 1 and item.vel.dashTime <= -2 and item.fish.dashCooldown <= 0f and item.fish.scare >= 0.13f:
       item.vel.vec += delta * 40f
       item.vel.dashTime = 1f
       item.fish.dashCooldown = rand(1f..3f)
@@ -305,23 +310,26 @@ sys("monsterSpawn", [Monster, Vel, Pos]):
     count.inc
     lastPos = item.pos.vec2
   finish:
+    firstSpawnTimer += fau.delta
+
     template randTier(): int = max(rand(-1..0) + curForm, 0)
-    template randDst(): float32 =  targetWidth.float32 * rand(3.2f..4.1f)
+    template randDst(): float32 =  targetWidth.float32 * rand(3.3f..4.1f)
 
-    if count == 0:
+    if firstSpawnTimer >= firstSpawnDelay:
+      if count == 0:
 
-      #spawn in front if there's zero
-      let dir = if sys.spawned: player.fetch(Vel).rot + rand(-1f..1f).rad * 0.4f * 0f else: rand(360f).rad
-      spawnMonster(randTier(), vec2l(dir, randDst()) + fau.cam.pos)
+        #spawn in front if there's zero
+        let dir = if sys.spawned: player.fetch(Vel).rot + rand(-1f..1f).rad * 0.4f * 0f else: rand(360f).rad
+        spawnMonster(randTier(), vec2l(dir, randDst()) + fau.cam.pos)
 
-      sys.spawned = true
-    elif count == 1 and curForm >= 1: 
-      #spawn behind prev if there's already one monster, surrounding the player
-      spawnMonster(randTier(), -(lastPos - fau.cam.pos).nor * randDst() + fau.cam.pos)
-    #elif count == 2 and curForm >= 2: 
-      #spawn below or above player at random
-      #TODO is this necessary?
-    #  spawnMonster(randTier(), -(lastPos - fau.cam.pos).nor.rotate((rand(0..1).float32 - 0.5f) * 2f * 90f.rad) * randDst() + fau.cam.pos)
+        sys.spawned = true
+      elif count == 1 and curForm >= 1: 
+        #spawn behind prev if there's already one monster, surrounding the player
+        spawnMonster(randTier(), -(lastPos - fau.cam.pos).nor * randDst() + fau.cam.pos)
+      elif count == 2 and curForm >= 2: 
+        #spawn below or above player at random
+        #TODO is this necessary?
+        spawnMonster(randTier(), -(lastPos - fau.cam.pos).nor.rotate((rand(0..1).float32 - 0.5f) * 2f * 90f.rad) * randDst() + fau.cam.pos)
 
 sys("monsterMove", [Monster, Vel, Pos]):
   start:
@@ -332,7 +340,7 @@ sys("monsterMove", [Monster, Vel, Pos]):
     
     let 
       vec = pp - item.pos.vec2
-      speed = 17f + item.monster.tier.float32*5f
+      speed = 18f + item.monster.tier.float32*7f
 
       bh = monsterBoxes[item.monster.tier]
       p = patch(&"monster{item.monster.tier + 1}")
@@ -470,6 +478,7 @@ sys("draw", [Main]):
       piece = patch(&"piece{i + 1}")
 
   start:
+    #TODO probably not players want?
     if keyEscape.tapped: quitApp()
 
     let scl = fau.size.x / targetWidth.float32 #fau.size.y / targetHeight.float32
@@ -477,9 +486,9 @@ sys("draw", [Main]):
     var maxDst = 720f
 
     #lower visibility means more range is necessary to actually see stuff
-    if darknessLevels[curForm] > 0.5f:
-      monsterMinDst += 10f
-      maxDst -= 50f
+    #if darknessLevels[curForm] > 0.5f:
+    #  monsterMinDst += 10f
+    #  maxDst -= 50f
 
     let baseMonsterLevel = (max(maxDst - monsterMinDst, 0f) / maxDst)
     let monsterLevel = baseMonsterLevel.pow(3f)
@@ -488,7 +497,7 @@ sys("draw", [Main]):
 
     shake(monsterLevel * 11f)
 
-    if monsterLevel >= 0.5f and darkAlpha >= 0.999f:
+    if monsterLevel >= 0.5f and coverAlpha >= 0.94f:
       deathTimer += fau.delta
       if deathTimer >= 0.5f or monsterLevel >= 0.99f:
         reset()
@@ -496,10 +505,10 @@ sys("draw", [Main]):
       deathTimer -= fau.delta
       deathTimer = max(deathTimer, 0f)
 
-    coverAlpha = lerp(monsterAlpha, monsterAlpha, (2f + monsterLevel*3f) * (1f + touching.float32 * 5f) * fau.delta)
+    coverAlpha = lerp(monsterAlpha, monsterAlpha, (3f + monsterLevel*3f) * (1f + touching.float32 * 5f) * fau.delta)
     darkAlpha = lerp(darkAlpha, darknessLevels[curForm], 2f * fau.delta)
 
-    drawLight = darkAlpha > 0
+    drawLight = darkAlpha > 0 or coverAlpha > 0
 
     if monsterAlpha > 0.01f:
       let vol = monsterAlpha * 7f
