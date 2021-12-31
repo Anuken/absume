@@ -1,32 +1,39 @@
-import ecs, fau/presets/[basic, effects], fau/util/util, math, random, strformat
+import ecs, fau/presets/[basic, effects], fau/util/util, math, random, strformat, fau/audio
 
 static: echo staticExec("faupack -p:../assets-raw/sprites -o:../assets/atlas --min:2048 --max:2048")
 
-#palette
 const
+  #palette
   col1 = %"172B4C"
   col2 = %"03113F"
   col3 = %"3960B5"
 
-const 
+  #level constants
   speeds = [1f, 1.13f, 1.13f, 1.2]
   dashSpeeds = [1f, 1.3f, 1.3f, 1.5f]
   darknessLevels = [0f, 0.1f, 1f, 1f]
   lightRadii = [0f, 40f, 150f, 140f]
   monsterOffsets = [-180f.rad, 90f.rad, 90f.rad, -180f.rad]
 
-const 
-  playerSpeed = 7f
-  #targetHeight = 300 #TODO unused
+  monsterBoxes = [
+    rect(42f, 362f, 1265f, 222f),
+    rect(116f, 82f, 309f, 447f),
+    rect(34f, 100f, 657f, 417f),
+    rect(54f, 192f, 677f, 543f)
+  ]
+
+  playerSpeed = 7f * 5f
+  #targetHeight = 300 #unused
   targetWidth = 600
   fishSpawned = 35
   despawnRange = targetWidth * 3
   monsterDespawnRange = targetWidth * 5f
   sclPerForm = 0.09f
   lightLayer = 10f
-  origins = [vec2(18f, 9f), vec2(24.5f, 9.5f), vec2(30f, 9f)]
+  soundInterval = 5f..8f
 
 var 
+  monsterSounds: array[4, seq[Sound]]
   player: EntityRef
   pieces: array[6, Patch]
   shakeTime: float32
@@ -34,6 +41,10 @@ var
   drawLight: bool
   darkAlpha = 0f
   curForm = 0
+  deathTimer = 0f
+  monsterMinDst = 0f
+  globalLowpass: BiquadFilter
+  noiseVoice: Voice
 
 template fishTarget(): int = 4 + curForm * 2
 
@@ -43,9 +54,59 @@ template spawnFish(ftier: int, pos: Vec2) =
 
 template spawnMonster(ftier: int, pos: Vec2) =
   let p = pos
-  discard newEntityWith(Vel(rot: (pos - playerPos).angle - monsterOffsets[ftier] + 90f.rad), Pos(x: p.x, y: p.y), Monster(tier: ftier, radius: patch("monster" & $ftier).width / 2f))
+  discard newEntityWith(Vel(rot: (p - playerPos).angle + monsterOffsets[ftier]), Pos(x: p.x, y: p.y), Monster(tier: ftier, radius: patch("monster" & $(ftier + 1)).width / 2f))
 
-template gameOver() = discard
+template sound(sounds: openArray[Sound]): Sound = sample(sounds)
+
+proc calcVoice(pos: Vec2, dst: float32): tuple[pan: float32, vol: float32, lop: float32] =
+  let 
+    xdst = pos.x - playerPos.x
+    #TODO hard cutoff might be bad, I don't know
+    pan = if xdst.abs <= 200f: 0f else: clamp(xdst / 800f, -1f, 1f)
+    volDst = targetWidth * 3f
+    #0 to 1 as player gets closer; should it be exponential?
+    volScl = max(1f - dst / volDst, 0f).pow(1.1f)
+    #0 to 1 as player gets closer; lifted up as low-pass only applies when really far away
+    lopScl = max(1f - dst / volDst, 0f).powout(2.5f)
+
+    lopMin = 70f
+    lopMax = 500f
+  
+  return (pan, volScl, lerp(lopMin, lopMax, lopScl))
+
+proc updateSound(voice: Voice, pos: Vec2, dst: float32) =
+  if voice.valid:
+    let params = calcVoice(pos, dst)
+    voice.pan = params.pan
+    voice.volume = params.vol
+    voice.setFilterParam(0, biquadFrequency, params.lop)
+
+proc monsterSound(sounds: seq[Sound], pos: Vec2, dst: float32): Voice =
+  let params = calcVoice(pos, dst)
+
+  globalLowpass.setLowpass(params.lop)
+  
+  #3 screens: distance lowpass, panned, quiet
+  #2 screens: less lowpass, louder
+  #1 screen or less: pretty much no lowpass, less panning, loud
+  
+  let sound = sounds.sample
+  sound.setFilter(0, globalLowpass)
+  return sound.play(pitch = rand(0.8f..1.1f), volume = params.vol, pan = params.pan)
+
+template reset() =
+  sysAll.clear()
+  shakeTime = 0f
+  curForm = 0
+  monsterMinDst = 0f
+  deathTimer = 0f
+  player = newEntityWith(Vel(), Pos(), Player(form: 0))
+
+  #spawnMonster(3, vec2(0f, 100f))
+
+  const spread = 800f
+  for i in 0..10:
+    spawnFish(0, vec2(rand(-spread..spread), rand(-spread..spread)))
 
 proc shake(intensity: float32) = shakeTime = max(shakeTime, intensity)
 
@@ -55,6 +116,9 @@ template checkForm() =
     p.form.inc
     p.fishEaten = 0
     effectFormUpgrade(player.fetch(Pos).vec2)
+    soundMutate.play(pitch = rand(0.9f..1.1f))
+
+template pitched(): float32 = rand(0.9f..1.1f)
 
 proc light(pos: Vec2, radius = 100f) =
   if drawLight and radius > 1f:
@@ -111,16 +175,28 @@ registerComponents(defaultComponentOptions):
     Monster = object
       tier: int
       radius: float32
+      soundTimer: float32
+      lastVoice: Voice
 
-sys("init", [Main]):
+sys("all", [Pos]):
   init:
-    player = newEntityWith(Vel(), Pos(), Player(form: 0))
+    reset()
 
-    #spawnMonster(3, vec2(0f, 100f))
+    monsterSounds = [
+      @[soundM11, soundM12],
+      @[soundM21, soundM22],
+      @[soundM31, soundM32],
+      @[soundM41, soundM42]
+    ]
 
-    const spread = 800f
-    for i in 0..10:
-      spawnFish(0, vec2(rand(-spread..spread), rand(-spread..spread)))
+    #TODO might be better to bake these into the sounds.
+    soundDash.setFilter(0, newLowpassFilter(110f))
+    soundEat.setFilter(0, newLowpassFilter(400f))
+    soundBubble.setFilter(0, newLowpassFilter(220f))
+    soundBubble2.setFilter(0, newLowpassFilter(240f))
+
+    globalLowpass = newLowpassFilter(2000f)
+    soundNoise.setFilter(0, globalLowpass)
 
 makeTimedSystem()
 
@@ -141,14 +217,13 @@ sys("fish", [Fish, Vel, Pos]):
     counts: array[6, int]
 
   start:
-    #TODO spawn fish
     let pp = player.fetch(Pos).vec2
     let pcomp = player.fetch(Player)
 
     for i in sys.counts.mitems:
       i = 0
   all:
-    const speedPerTier = 0.23f
+    const speedPerTier = 0.26f
 
     #despawn when not in range anymore
     let dst = item.pos.vec2.dst(pp)
@@ -170,8 +245,8 @@ sys("fish", [Fish, Vel, Pos]):
     let avoidAngle = (item.pos.vec2 - pp).angle
 
     #avoid player
-    if dst < 90f:
-      item.vel.rot = item.vel.rot.aapproach(avoidAngle, 2.5f * fau.delta)
+    if dst < 90f - item.fish.tier * 3f:
+      item.vel.rot = item.vel.rot.aapproach(avoidAngle, 2.5f * fau.delta * (0.2f + item.fish.tier))
       item.fish.scare = item.fish.scare.lerp(1f, 1f * fau.delta)
 
       if chance(1.7f * fau.delta):
@@ -187,7 +262,7 @@ sys("fish", [Fish, Vel, Pos]):
     item.pos.x += item.vel.vec.x
     item.pos.y += item.vel.vec.y
 
-    item.fish.dashCooldown -= fau.delta * (1f + item.fish.tier * 0.25f)
+    item.fish.dashCooldown -= fau.delta * (1f + item.fish.tier * 0.3f)
 
     if item.fish.tier >= 1 and item.vel.dashTime <= -2 and item.fish.dashCooldown <= 0f and item.fish.scare >= 0.6f:
       item.vel.vec += delta * 40f
@@ -202,15 +277,18 @@ sys("fish", [Fish, Vel, Pos]):
     for i in 0..<segc:
       item.fish.segments[i] = sin(fau.time + item.entity.entityId.float32 * 3f, 0.12, 0.34f) * item.fish.scare
 
-    #TODO hitbox size?
     if dst <= 16f + item.fish.size and curForm == item.fish.tier:
-      effectFishEat(item.pos.vec2, rot = 1f + item.fish.tier * 0.5f) #TODO vary size
+      effectFishEat(item.pos.vec2, rot = 1f + item.fish.tier * 0.5f)
+
+      soundEat.play(pitch = pitched())
 
       shake(7f)
 
       let count = rand(1..4)
       for i in 0..<count:
         effectBubble(item.pos.vec2 + randVec(5f), rot = rand(360f.rad), life = rand(2f..4f))
+
+        soundBubble.play(pitch = rand(0.4f..0.6f) * 2f)
       
       if curForm == item.fish.tier:
         pcomp.fishEaten.inc
@@ -219,6 +297,8 @@ sys("fish", [Fish, Vel, Pos]):
       sys.deleteList.add item.entity
 
 sys("monsterSpawn", [Monster, Vel, Pos]):
+  fields:
+    spawned: bool
   start:
     var count = 0
     var lastPos: Vec2
@@ -230,29 +310,64 @@ sys("monsterSpawn", [Monster, Vel, Pos]):
     template randDst(): float32 =  targetWidth.float32 * rand(3.3f..4.5f)
 
     if count == 0:
+
       #spawn in front if there's zero
-      let dir = player.fetch(Vel).rot + rand(-10f..10f).rad
+      let dir = if sys.spawned: player.fetch(Vel).rot + rand(-1f..1f).rad * 0.4f * 0f else: rand(360f).rad
       spawnMonster(randTier(), vec2l(dir, randDst()) + fau.cam.pos)
-      #TODO spawn three
+
+      sys.spawned = true
     elif count == 1 and curForm >= 1: 
       #spawn behind prev if there's already one monster, surrounding the player
       spawnMonster(randTier(), -(lastPos - fau.cam.pos).nor * randDst() + fau.cam.pos)
-
+    elif count == 2 and curForm >= 2: 
+      #spawn below or above player at random
+      #TODO is this necessary?
+      spawnMonster(randTier(), -(lastPos - fau.cam.pos).nor.rotate((rand(0..1).float32 - 0.5f) * 2f * 90f.rad) * randDst() + fau.cam.pos)
 
 sys("monsterMove", [Monster, Vel, Pos]):
   start:
+    monsterMinDst = 999999999f
     let p = player.fetch(Player)
     let pp = player.fetch(Pos).vec2
   all:
-    let vec = pp - item.pos.vec2
-    let speed = 17f + item.monster.tier.float32*5f
+    
+    let 
+      vec = pp - item.pos.vec2
+      speed = 17f + item.monster.tier.float32*5f
+
+      bh = monsterBoxes[item.monster.tier]
+      p = patch(&"monster{item.monster.tier + 1}")
+      topLeft = item.pos.vec2 + p.size/2f * vec2(-1f, 1f) + vec2(bh.x, -bh.y)
+
+      hitRect = rect(
+        topLeft.x,
+        topLeft.y - bh.h,
+        bh.w,
+        bh.h
+      )
+
+      relativepp = (pp - item.pos.vec2).rotate(-item.vel.rot) + item.pos.vec2
+
+    #echo monsterMinDst
+      #now find distance from hitRect to relativepp
 
     if not within(pp, item.pos.vec2, monsterDespawnRange + item.monster.radius):
       sys.deleteList.add item.entity
     
-    let delta = vec.lim(1f) * speed * fau.delta
+    let
+      dst = (hitRect.dst(relativepp))
+      delta = vec.lim(1f) * speed * fau.delta
 
-    #TODO VEL?
+    monsterMinDst = dst.min(monsterMinDst)
+
+    if item.monster.soundTimer <= 0f:
+      item.monster.lastVoice = monsterSound(monsterSounds[item.monster.tier], item.pos.vec2, dst)
+      item.monster.soundTimer = rand(soundInterval)
+    else:
+      updateSound(item.monster.lastVoice, item.pos.vec2, dst)
+
+    item.monster.soundTimer -= fau.delta
+
     item.pos.x += delta.x
     item.pos.y += delta.y
 
@@ -279,6 +394,7 @@ sys("playerMove", [Player, Vel, Pos]):
     if (keyLShift.tapped or keySpace.tapped) and item.vel.dashTime <= -2f and vec.len > 0:
       item.vel.vec += base * 50f * dmult
       item.vel.dashTime = 1f
+      soundDash.play(pitch = pitched())
       shake(3f)
 
     item.pos.x += item.vel.vec.x
@@ -299,13 +415,18 @@ sys("playerMove", [Player, Vel, Pos]):
       item.vel.moveTime += fau.delta
       
       if chance(2f * fau.delta):
+        if chance(0.5f):
+          sound([soundBubble, soundBubble2]).play(pitch = rand(0.4f..0.5f), volume = 0.2f)
         effectBubble(item.pos.vec2 + vec2l(item.vel.rot, 11f) + randVec(7f), rot = 90f.rad)
 
 sys("dasher", [Vel, Pos]):
   all:
     if item.vel.dashTime > 0:
       incTimer(item.vel.bub, 30f / 60f):
-         effectDash(item.pos.vec2 + randVec(2f), item.vel.rot)
+        effectDash(item.pos.vec2 + randVec(2f), item.vel.rot)
+
+        if chance(0.3):
+          soundBubble.play(pitch = rand(0.3f..0.5f))
     
     item.vel.dashTime -= fau.delta * 1.8f
 
@@ -351,10 +472,43 @@ sys("draw", [Main]):
 
     let scl = fau.size.x / targetWidth.float32 #fau.size.y / targetHeight.float32
 
-    darkAlpha = lerp(darkAlpha, darknessLevels[curForm], 1f * fau.delta)
+    #500 - should start to get dark
+    #300 - almost death
+    #50 - instant death
+
+    let maxDst = 700f
+
+    let baseMonsterLevel = (max(maxDst - monsterMinDst, 0f) / maxDst)
+    let monsterLevel = baseMonsterLevel.pow(3f)
+    let touching = baseMonsterLevel >= 0.95f
+    let monsterAlpha = lerp(0f, 1f, monsterLevel)
+
+    shake(monsterLevel * 11f)
+
+    if monsterLevel >= 0.5f and darkAlpha >= 0.999f:
+      deathTimer += fau.delta
+      if deathTimer >= 0.5f or monsterLevel >= 0.99f:
+        reset()
+    else:
+      deathTimer -= fau.delta
+      deathTimer = max(deathTimer, 0f)
+
+    darkAlpha = lerp(darkAlpha, darknessLevels[curForm] + monsterAlpha, (2f + monsterLevel*3f) * (1f + touching.float32 * 5f) * fau.delta)
 
     drawLight = darkAlpha > 0
-    #darkAlpha = max(0f, -fau.cam.pos.y / 300f)
+
+    if monsterAlpha > 0.01f:
+      let vol = monsterAlpha * 9f
+
+      if not noiseVoice.valid:
+        noiseVoice = soundNoise.play(volume = vol, loop = true, pitch = 0.1f)
+      
+      noiseVoice.volume = vol
+      noiseVoice.setFilterParam(0, biquadFrequency, 2000f)
+    elif noiseVoice.valid:
+      noiseVoice.volume = noiseVoice.volume - 4f * fau.delta
+      if noiseVoice.volume <= 0.01f:
+        noiseVoice.stop()
 
     sys.buffer.clear(col1)
     sys.buffer.resize((fau.size / scl).vec2i)
