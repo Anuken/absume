@@ -34,6 +34,8 @@ const
   firstSpawnDelay = 10f
 
 var 
+  started = false
+  startSize = 1f
   monsterSounds: array[4, seq[Sound]]
   player: EntityRef
   pieces: array[6, Patch]
@@ -48,6 +50,9 @@ var
   globalLowpass: BiquadFilter
   noiseVoice: Voice
   firstSpawnTimer = 0f
+
+#when defined(debug):
+#  started = true
 
 template fishTarget(): int = 5 + curForm * 2
 
@@ -310,7 +315,8 @@ sys("monsterSpawn", [Monster, Vel, Pos]):
     count.inc
     lastPos = item.pos.vec2
   finish:
-    firstSpawnTimer += fau.delta
+    if started:
+      firstSpawnTimer += fau.delta
 
     template randTier(): int = max(rand(-1..0) + curForm, 0)
     template randDst(): float32 =  targetWidth.float32 * rand(3.3f..4.1f)
@@ -391,6 +397,7 @@ sys("playerMove", [Player, Vel, Pos]):
       vec = vec2(axis(keyA, keyD), axis(keyS, keyW)).lim(1f) * playerSpeed * fau.delta * smult
     
     if vec.len > 0:
+      started = true
       item.vel.rot = item.vel.rot.alerp(vec.angle, 2.4f * fau.delta)
     
     item.vel.vec *= (1f - fau.delta * 4f)
@@ -405,6 +412,7 @@ sys("playerMove", [Player, Vel, Pos]):
       item.vel.dashTime = 1f
       soundDash.play(pitch = pitched())
       shake(3f)
+      started = true
 
     item.pos.x += item.vel.vec.x
     item.pos.y += item.vel.vec.y
@@ -553,10 +561,13 @@ sys("draw", [Main]):
           alpha = darkAlpha
           cover = coverAlpha
 
-    #let b = sin(fau.time, 0.5f, 0.3f)
-    #drawBend("dolphin1".patch, vec2(), [b, b, b, b], 2, color = colorRed)
-    #draw("dolphin1".patch, vec2(0f, -14f))
-  
+
+    if startSize > 0.01f:
+      draw("start".patch, fau.cam.pos + vec2(0, fau.cam.height * (1f - startSize)), z = 2f)
+    
+    if started:
+      startSize = lerp(startSize, 0f, fau.delta * 4f)
+
   finish:
     discard
 
