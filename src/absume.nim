@@ -55,9 +55,6 @@ var
   noiseVoice: Voice
   firstSpawnTimer = 0f
 
-#when defined(debug):
-#  started = true
-
 template fishTarget(): int = 5 + curForm * 2
 
 template spawnFish(ftier: int, pos: Vec2) =
@@ -73,7 +70,6 @@ template sound(sounds: openArray[Sound]): Sound = sample(sounds)
 proc calcVoice(pos: Vec2, dst: float32): tuple[pan: float32, vol: float32, lop: float32] =
   let 
     xdst = pos.x - playerPos.x
-    #TODO hard cutoff might be bad, I don't know
     pan = if xdst.abs <= 200f: 0f else: clamp(xdst / 800f, -1f, 1f)
     volDst = targetWidth * 3.1f
     #0 to 1 as player gets closer; should it be exponential?
@@ -98,10 +94,6 @@ proc monsterSound(sounds: seq[Sound], pos: Vec2, dst: float32): Voice =
 
   globalLowpass.setLowpass(params.lop)
   
-  #3 screens: distance lowpass, panned, quiet
-  #2 screens: less lowpass, louder
-  #1 screen or less: pretty much no lowpass, less panning, loud
-  
   let sound = sounds.sample
   sound.setFilter(0, globalLowpass)
   return sound.play(pitch = rand(0.8f..1.1f), volume = params.vol, pan = params.pan)
@@ -113,10 +105,7 @@ template reset() =
   monsterMinDst = 0f
   deathTimer = 0f
   firstSpawnTimer = 0f
-  #TODO unset
   player = newEntityWith(Vel(), Pos(), Player(form: 0, fishEaten: 0))
-
-  #spawnMonster(3, vec2(800f, 0f))
 
   const spread = 800f
   for i in 0..10:
@@ -350,7 +339,6 @@ sys("monsterSpawn", [Monster, Vel, Pos]):
         spawnMonster(randTier(), -(lastPos - fau.cam.pos).nor * randDst() + fau.cam.pos)
       elif count == 2 and curForm >= 2: 
         #spawn below or above player at random
-        #TODO is this too many?
         let 
           base = -(lastPos - fau.cam.pos).nor
           dir1 = (rand(0..1).float32 - 0.5f) * 2f * 90f.rad
@@ -514,17 +502,11 @@ sys("draw", [Main]):
       piece = patch(&"piece{i + 1}")
 
   start:
-    #TODO probably not players want?
     if keyEscape.tapped: quitApp()
 
-    let scl = fau.size.x / targetWidth.float32 #fau.size.y / targetHeight.float32
+    let scl = fau.size.x / targetWidth.float32
 
     var maxDst = 720f
-
-    #lower visibility means more range is necessary to actually see stuff
-    #if darknessLevels[curForm] > 0.5f:
-    #  monsterMinDst += 10f
-    #  maxDst -= 50f
 
     let baseMonsterLevel = (max(maxDst - monsterMinDst, 0f) / maxDst)
     let monsterLevel = baseMonsterLevel.pow(3f)
@@ -676,9 +658,6 @@ sys("drawFish", [Fish, Pos, Vel]):
       scl = vec2((1f + sin(item.vel.moveTime, 3.5f, 0.07f)), -(item.vel.rot >= 90f.rad and item.vel.rot < 270f.rad).sign) * (1f + item.fish.sizeMult) * lerp(1f, 0f, item.fish.shrink),
       z = lightLayer + 2
     )
-
-    #if item.fish.tier >= 1:
-    #  light(item.pos.vec2, 30f * (1f - item.fish.shrink))
 
 const offsets = [vec2(-5f, 0f), vec2(), vec2(4f, 0f)]
 
