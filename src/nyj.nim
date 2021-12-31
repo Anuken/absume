@@ -702,4 +702,4 @@ sys("endDraw", [Main]):
     drawBufferScreen()
     sysDraw.buffer.blit()
 
-launchFau("New Year's Jam 2021")
+launchFau("Absume")
