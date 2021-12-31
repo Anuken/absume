@@ -285,6 +285,9 @@ sys("fish", [Fish, Vel, Pos]):
       item.vel.vec += delta * 40f
       item.vel.dashTime = 1f
       item.fish.dashCooldown = rand(1f..4f)
+      #dolphins annoying
+      if item.fish.tier == 4:
+        item.fish.dashCooldown += 1f
 
     item.vel.moveTime += speed * fau.delta
 
