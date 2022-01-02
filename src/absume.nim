@@ -87,7 +87,7 @@ proc updateSound(voice: Voice, pos: Vec2, dst: float32) =
     let params = calcVoice(pos, dst)
     voice.pan = params.pan
     voice.volume = params.vol
-    voice.setFilterParam(0, biquadFrequency, params.lop)
+    voice.setFilterParam(0, fBiquadFrequency, params.lop)
 
 proc monsterSound(sounds: seq[Sound], pos: Vec2, dst: float32): Voice =
   let params = calcVoice(pos, dst)
@@ -549,9 +549,10 @@ sys("draw", [Main]):
 
       if not noiseVoice.valid:
         noiseVoice = soundNoise.play(volume = vol, loop = true, pitch = 0.24f)
+        #TODO bad performance, does it even need this?
+        noiseVoice.setFilterParam(0, fBiquadFrequency, 2000f)
       
       noiseVoice.volume = vol
-      noiseVoice.setFilterParam(0, biquadFrequency, 2000f)
     elif noiseVoice.valid:
       noiseVoice.volume = noiseVoice.volume - 4f * fau.delta
       if noiseVoice.volume <= 0.01f:
